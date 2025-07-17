@@ -38,7 +38,51 @@ def get_config():
     with open(CONFIG_FILE) as f:
         return json.load(f)
 
+# --- Run Bot ---
+if __name__ == "__main__":
+    config = get_config()
+    token = config.get("bot_token") or os.getenv("DISCORD_BOT_TOKEN")
+    if not token:
+        print("❌ Bot token not found. Add 'bot_token' to config.json or set DISCORD_BOT_TOKEN environment variable.")
+    else:
+        bot.run(token)
+
 # --- Slash Command Tree ---
+# --- Background Tasks ---
+@tasks.loop(hours=24)
+async def delete_old_threads():
+    """Delete threads older than 7 days"""
+    config = get_config()
+    category_id = config.get("event_forum_category")
+    
+    if not category_id:
+        return
+        
+    category = bot.get_channel(category_id)
+    if not category or not isinstance(category, discord.ForumChannel):
+        return
+    
+    cutoff_date = datetime.now() - timedelta(days=7)
+    threads_to_remove = []
+    
+    for thread_id, data in event_data.items():
+        created_at = datetime.fromisoformat(data.get("created_at", ""))
+        if created_at < cutoff_date:
+            thread = category.get_thread(int(thread_id))
+            if thread:
+                try:
+                    await thread.delete()
+                except:
+                    pass  # Thread might already be deleted
+            threads_to_remove.append(thread_id)
+    
+    # Remove from data
+    for thread_id in threads_to_remove:
+        del event_data[thread_id]
+    
+    if threads_to_remove:
+        save_data()
+
 @bot.event
 async def on_ready():
     load_data()
@@ -68,4 +112,39 @@ async def event_handler(interaction: discord.Interaction, action: app_commands.C
             return
 
         thread = await category.create_thread(name=f"event-{interaction.user.name}-{int(datetime.now().timestamp())}", content=description)
-        event_data[str(thread.id)] =_
+        event_data[str(thread.id)] = {
+            "creator": interaction.user.id,
+            "created_at": datetime.now().isoformat(),
+            "description": description
+        }
+        save_data()
+        await interaction.response.send_message(f"Event thread created: {thread.mention}", ephemeral=True)
+
+    elif action.value == "close":
+        if not thread_name:
+            await interaction.response.send_message("Please provide the thread name to close.", ephemeral=True)
+            return
+
+        category = interaction.guild.get_channel(category_id)
+        if not category or not isinstance(category, discord.ForumChannel):
+            await interaction.response.send_message("Forum category is not set up correctly.", ephemeral=True)
+            return
+
+        # Find thread by name
+        thread = None
+        for t in category.threads:
+            if t.name == thread_name:
+                thread = t
+                break
+
+        if not thread:
+            await interaction.response.send_message(f"Thread '{thread_name}' not found.", ephemeral=True)
+            return
+
+        # Remove from event data and close thread
+        if str(thread.id) in event_data:
+            del event_data[str(thread.id)]
+            save_data()
+
+        await thread.edit(archived=True, locked=True)
+        await interaction.response.send_message(f"Event thread '{thread_name}' has been closed.", ephemeral=True)
