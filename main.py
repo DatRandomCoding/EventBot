@@ -174,12 +174,15 @@ async def event_handler(interaction: discord.Interaction, action: app_commands.C
 
 # --- Run Bot ---
 if __name__ == "__main__":
-    token = os.getenv("DISCORD_BOT_TOKEN")
-    if not token:
+    try:
         config = get_config()
         token = config.get("bot_token")
-    
-    if not token:
-        print("❌ Bot token not found. Set DISCORD_BOT_TOKEN in Secrets or add 'bot_token' to config.json.")
-    else:
-        bot.run(token)
+        
+        if not token:
+            print("❌ Bot token not found. Please add 'bot_token' to config.json.")
+        else:
+            bot.run(token)
+    except FileNotFoundError:
+        print("❌ config.json file not found. Please create it with your bot token.")
+    except Exception as e:
+        print(f"❌ Error loading configuration: {e}")
