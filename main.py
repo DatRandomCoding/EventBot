@@ -22,19 +22,26 @@ event_data = {}  # Loaded from file
 # --- Load/Save Data ---
 def load_data():
     global event_data
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r') as f:
-            content = f.read().strip()
-            if content:
-                event_data = json.loads(content)
-            else:
-                event_data = {}
-    else:
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r') as f:
+                content = f.read().strip()
+                if content:
+                    event_data = json.loads(content)
+                else:
+                    event_data = {}
+        else:
+            event_data = {}
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading data: {e}")
         event_data = {}
 
 def save_data():
-    with open(DATA_FILE, 'w') as f:
-        json.dump(event_data, f, indent=2)
+    try:
+        with open(DATA_FILE, 'w') as f:
+            json.dump(event_data, f, indent=2)
+    except IOError as e:
+        print(f"Error saving data: {e}")
 
 def get_config():
     if not os.path.exists(CONFIG_FILE):
@@ -105,18 +112,21 @@ async def event_handler(interaction: discord.Interaction, action: app_commands.C
             await interaction.response.send_message("Forum category is not set up correctly.", ephemeral=True)
             return
 
-        thread_with_message = await category.create_thread(
-            name=f"event-{interaction.user.name}-{int(datetime.now().timestamp())}", 
-            content=f"**Event Description:**\n{description}"
-        )
-        thread = thread_with_message.thread
-        event_data[str(thread.id)] = {
-            "creator": interaction.user.id,
-            "created_at": datetime.now().isoformat(),
-            "description": description
-        }
-        save_data()
-        await interaction.response.send_message(f"Event thread created: {thread.mention}", ephemeral=True)
+        try:
+            thread_with_message = await category.create_thread(
+                name=f"event-{interaction.user.name}-{int(datetime.now().timestamp())}", 
+                content=f"**Event Description:**\n{description}"
+            )
+            thread = thread_with_message.thread
+            event_data[str(thread.id)] = {
+                "creator": interaction.user.id,
+                "created_at": datetime.now().isoformat(),
+                "description": description
+            }
+            save_data()
+            await interaction.response.send_message(f"Event thread created: {thread.mention}", ephemeral=True)
+        except discord.HTTPException as e:
+            await interaction.response.send_message(f"Error creating thread: {str(e)}", ephemeral=True)
 
     elif action.value == "close":
         if not thread_name:
@@ -128,9 +138,15 @@ async def event_handler(interaction: discord.Interaction, action: app_commands.C
             await interaction.response.send_message("Forum category is not set up correctly.", ephemeral=True)
             return
 
-        # Find thread by name
+        # Find thread by name (check both active and archived threads)
         thread = None
-        for t in category.threads:
+        all_threads = list(category.threads)
+        
+        # Also check archived threads
+        async for archived_thread in category.archived_threads(limit=100):
+            all_threads.append(archived_thread)
+        
+        for t in all_threads:
             if t.name == thread_name:
                 thread = t
                 break
@@ -139,13 +155,22 @@ async def event_handler(interaction: discord.Interaction, action: app_commands.C
             await interaction.response.send_message(f"Thread '{thread_name}' not found.", ephemeral=True)
             return
 
-        # Remove from event data and close thread
-        if str(thread.id) in event_data:
-            del event_data[str(thread.id)]
-            save_data()
+        # Check if user has permission to close this thread
+        thread_data = event_data.get(str(thread.id))
+        if thread_data and thread_data.get("creator") != interaction.user.id:
+            await interaction.response.send_message("You can only close threads that you created.", ephemeral=True)
+            return
 
-        await thread.edit(archived=True, locked=True)
-        await interaction.response.send_message(f"Event thread '{thread_name}' has been closed.", ephemeral=True)
+        try:
+            # Remove from event data and close thread
+            if str(thread.id) in event_data:
+                del event_data[str(thread.id)]
+                save_data()
+
+            await thread.edit(archived=True, locked=True)
+            await interaction.response.send_message(f"Event thread '{thread_name}' has been closed.", ephemeral=True)
+        except discord.HTTPException as e:
+            await interaction.response.send_message(f"Error closing thread: {str(e)}", ephemeral=True)
 
 # --- Run Bot ---
 if __name__ == "__main__":
