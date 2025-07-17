@@ -1,0 +1,1 @@
+This bot is an events bot that uses Threads in discord to create challenge or limited-time channels for events. Once an event is done, the creator of the thread can close it and it will automatically be deleted within 7 days.
