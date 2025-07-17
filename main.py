@@ -105,10 +105,11 @@ async def event_handler(interaction: discord.Interaction, action: app_commands.C
             await interaction.response.send_message("Forum category is not set up correctly.", ephemeral=True)
             return
 
-        thread = await category.create_thread(
+        thread_with_message = await category.create_thread(
             name=f"event-{interaction.user.name}-{int(datetime.now().timestamp())}", 
             content=f"**Event Description:**\n{description}"
         )
+        thread = thread_with_message.thread
         event_data[str(thread.id)] = {
             "creator": interaction.user.id,
             "created_at": datetime.now().isoformat(),
