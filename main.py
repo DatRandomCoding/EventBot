@@ -24,7 +24,11 @@ def load_data():
     global event_data
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, 'r') as f:
-            event_data = json.load(f)
+            content = f.read().strip()
+            if content:
+                event_data = json.loads(content)
+            else:
+                event_data = {}
     else:
         event_data = {}
 
