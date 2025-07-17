@@ -38,16 +38,6 @@ def get_config():
     with open(CONFIG_FILE) as f:
         return json.load(f)
 
-# --- Run Bot ---
-if __name__ == "__main__":
-    config = get_config()
-    token = config.get("bot_token") or os.getenv("DISCORD_BOT_TOKEN")
-    if not token:
-        print("❌ Bot token not found. Add 'bot_token' to config.json or set DISCORD_BOT_TOKEN environment variable.")
-    else:
-        bot.run(token)
-
-# --- Slash Command Tree ---
 # --- Background Tasks ---
 @tasks.loop(hours=24)
 async def delete_old_threads():
@@ -148,3 +138,15 @@ async def event_handler(interaction: discord.Interaction, action: app_commands.C
 
         await thread.edit(archived=True, locked=True)
         await interaction.response.send_message(f"Event thread '{thread_name}' has been closed.", ephemeral=True)
+
+# --- Run Bot ---
+if __name__ == "__main__":
+    token = os.getenv("DISCORD_BOT_TOKEN")
+    if not token:
+        config = get_config()
+        token = config.get("bot_token")
+    
+    if not token:
+        print("❌ Bot token not found. Set DISCORD_BOT_TOKEN in Secrets or add 'bot_token' to config.json.")
+    else:
+        bot.run(token)
